@@ -17,18 +17,18 @@ class JointAngles:
         self.position = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 
 # UR3e home position
-home = np.radians([120, -90, 90, -90, -90, 0])
+home = np.radians([180, -80, 90, -90, -90, 13])
 
 # Hanoi tower location 
-Q11 = [175.87*pi/180.0, -52.88*pi/180.0, 111.79*pi/180.0, -151.08*pi/180.0, -88.56*pi/180.0, 104.23*pi/180.0]   #a1
-Q12 = [191.49*pi/180.0, -47.19*pi/180.0, 96.08*pi/180.0, -138.36*pi/180.0, -90*pi/180.0, 115*pi/180.0]      #b1
-Q13 = [203*pi/180.0, -38*pi/180.0, 80*pi/180.0, -135.82*pi/180.0, -88.36*pi/180.0, 117.59*pi/180.0]     #c1
-Q21 = [175.94*pi/180.0, -59.35*pi/180.0, 112.09*pi/180.0, -146.72*pi/180.0, -87.98*pi/180.0, 105.55*pi/180.0]
-Q22 = [190.62*pi/180.0, -53.05*pi/180.0, 99.33*pi/180.0, -139.58*pi/180.0, -88.68*pi/180.0, 110.73*pi/180.0]
-Q23 = [203.40*pi/180.0, -42.14*pi/180.0, 74.3*pi/180.0, -122.25*pi/180.0, -88.44*pi/180.0, 121.44*pi/180.0]
-Q31 = [173.66*pi/180.0, -66.09*pi/180.0, 106.43*pi/180.0, -128.90*pi/180.0, -84.19*pi/180.0, 101.11*pi/180.0]
-Q32 = [183.19*pi/180.0, -58.85*pi/180.0, 95.16*pi/180.0, -126.05*pi/180.0, -92.31*pi/180.0, 39.22*pi/180.0]
-Q33 = [202.89*pi/180.0, -47.41*pi/180.0, 79.37*pi/180.0, -127.9*pi/180.0, -90.26*pi/180.0, 114.48*pi/180.0]
+Q11 = [168.15*pi/180.0, -48.60*pi/180.0, 101.60*pi/180.0, -143.37*pi/180.0, -89.47*pi/180.0, 1.34*pi/180.0]   #a1
+Q12 = [181.81*pi/180.0, -44.79*pi/180.0, 91.40*pi/180.0, -134.34*pi/180.0, -89.72*pi/180.0, 15.65*pi/180.0]      #b1
+Q13 = [196*pi/180.0, -34.3*pi/180.0, 66.92*pi/180.0, -120.94*pi/180.0, -94.07*pi/180.0, 15.39*pi/180.0]     #c1
+Q21 = [167.75*pi/180.0, -56.22*pi/180.0, 103.88*pi/180.0, -141.61*pi/180.0, -92.85*pi/180.0, 6.12*pi/180.0]
+Q22 = [182.62*pi/180.0, -49.87*pi/180.0, 91.08*pi/180.0, -134.02*pi/180.0, -92.76*pi/180.0, 7.80*pi/180.0]
+Q23 = [195.35*pi/180.0, -40.52*pi/180.0, 71.65*pi/180.0, -123.39*pi/180.0, -93.44*pi/180.0, 14.55*pi/180.0]
+Q31 = [167.26*pi/180.0, -60.30*pi/180.0, 98.17*pi/180.0, -128.76*pi/180.0, -91.71*pi/180.0, 3.45*pi/180.0]
+Q32 = [181.25*pi/180.0, -53.58*pi/180.0, 86.61*pi/180.0, -124.66*pi/180.0, -91.09*pi/180.0, 3.44*pi/180.0]
+Q33 = [194.92*pi/180.0, -40.91*pi/180.0, 62.47*pi/180.0, -112.53*pi/180.0, -92.29*pi/180.0, 3.04*pi/180.0]
 ############## Your Code Start Here ##############
 """
 : Initialize Q matrix
@@ -194,10 +194,12 @@ class UR3e(Node):
             return True
          
         self.set_io(0,1.0)
-        time.sleep(2)
+        start_time = time.time()
+        while time.time() - start_time < 0.5:
+            rclpy.spin_once(self, timeout_sec=0.1)
 
         print(f'hahhahahahaha {self.analog_in_0_value}')
-        if(self.analog_in_0_value < 1.1):
+        if(self.analog_in_0_value < 2):
             print("Quitting... not found block ")
             self.set_io(0,0.0)
             raise InterruptedError
@@ -269,15 +271,15 @@ def main(args=None):
        
         if (len(input_string)>1):
             start,stop = input_string.split()
-            start = int(start)
-            stop = int(stop)
+            start = int(start) -1
+            stop = int(stop) -1 
         elif (int(input_string) == 0):
             print("Quitting... ")
             sys.exit()
         else:
             print("Please just enter the character 1 2 3 or 0 to quit \n\n")
 
-        aux = [i for i in [1,2,3] if i not in [start,stop]][0]
+        aux = [i for i in [0,1,2] if i not in [start,stop]][0]
 
         rods = {start:[],stop:[], aux:[]}
         rods[start] = [1,2,3]
