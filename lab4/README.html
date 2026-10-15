@@ -1,0 +1,91 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>Lab 4 使用说明</title>
+<style>body{max-width:900px;margin:40px auto;padding:0 20px;font:16px/1.7 sans-serif;color:#222}pre{background:#f2f4f6;padding:16px;overflow:auto}h1,h2{color:#174a7e}a{color:#174a7e}table{border-collapse:collapse}td,th{border:1px solid #aaa;padding:8px}</style>
+<h1>ECE 470 Lab 4 使用说明</h1>
+<p>已按照 Lab4_Manual.pdf 完成 UR3e 肘部向上（elbow-up）逆运动学，实现世界坐标与基座坐标转换、六个关节角求解、Lab 3 正运动学回代检查和编码器角度转换。位置输入为米，yaw 输入为度，发送给 ROS 的关节角为弧度。</p>
+<p>已更新原有 Git 克隆到 839462c。原仓库包含另一台电脑生成的 build/install/log 文件；本次采用独立目录 .lab4-build、.lab4-install、.lab4-log 编译，保留原文件。每个运行终端必须加载本次生成的安装目录。</p>
+<h2>1. 编译及离线验证</h2>
+<pre>cd /home/xliu173/ece470/ece470lab/lab_files
+source /opt/ros/jazzy/setup.bash
+colcon --log-base .lab4-log build --base-paths src \
+  --build-base .lab4-build --install-base .lab4-install --symlink-install
+source .lab4-install/local_setup.bash
+ros2 run ece470labs lab4_exec 0.1 0.1 0.15 90 --dry-run</pre>
+<p>--dry-run 只计算和打印结果，不创建 ROS 节点，也不发送运动指令。上述例子的正运动学回代位置为 (0.100, 0.100, 0.150) m，yaw 为 90°，编码器角度约为 [128.554, −98.241, 127.000, −118.759, −90.000, −51.446]°。</p>
+<pre>cd /home/xliu173/ece470
+python3 -m pytest -q lab4/test_lab4.py</pre>
+<p>17 项数值测试涵盖 200 个由原有正运动学生成的位姿、不同象限、yaw 周期、运动学边界与非法输入。还可在 ROS 环境加载后运行 <code>python3 -m pytest -q lab4/test_lab4_exec.py</code>，验证命令解析、轨迹消息及关节反馈处理。</p>
+<h2>2. 实验台运行</h2>
+<p>终端 1：确认机器人所在实验台编号，使用对应的 Robot?_calibration.yaml。下方驱动命令中的问号必须替换为实际编号，校准文件必须存在。机器人 IP 使用实验手册给出的值，如实验台另有配置则以实际配置为准。</p>
+<pre>cd /home/xliu173/ece470/ece470lab/lab_files
+source ur3_setup.sh
+source .lab4-install/local_setup.bash
+ros2 launch ur_robot_driver ur_control.launch.py \
+  ur_type:=ur3e robot_ip:=192.168.10.53 \
+  headless_mode:=true launch_rviz:=true \
+  kinematics_params_file:="Robot?_calibration.yaml"</pre>
+<p>终端 2：</p>
+<pre>cd /home/xliu173/ece470/ece470lab/lab_files
+source ur3_setup.sh
+source .lab4-install/local_setup.bash
+ros2 run ece470labs lab4_exec 0.1 0.1 0.15 90</pre>
+<p>程序会先打印计算结果，然后等待回车确认。按实验手册要求把显示器移到左侧，确认路径无障碍、机器人处于 Remote/Normal 状态且驱动已启动后，再按回车。--dry-run 验证的是运动学终点，不能判断中间路径是否碰撞。若提示等待超时，请检查驱动、控制器和两个终端的 ROS_DOMAIN_ID。ur3_setup.sh 的实验台域号映射保持原样。</p>
+<h2>3. 报告与实测数据</h2>
+<p><a href="Lab4_Report.pdf">英文报告 PDF 草稿</a> / <a href="Lab4_Report.html">可编辑的 HTML 版本</a> 已包含六个关节的推导、三张原创矢量图、六组建议测试点、数值验证和误差讨论框架。请依据你的理解审阅，并补全个人信息和实验结论。</p>
+<p>尚未执行实体机器人运动或取得尺量数据。用尺和直角尺在手册定义的世界坐标系中测量吸盘位置，将结果以米填写到 <a href="measurements.csv">measurements.csv</a> 的 measured_x_m、measured_y_m、measured_z_m。可以按实验台的实际可用空间修改测试点；每行的三个测量值应同时填写。然后重新生成：</p>
+<pre>cd /home/xliu173/ece470
+python3 lab4/generate_report.py</pre>
+<p>脚本将重算欧氏距离标量误差，更新 measurement_results.csv、numerical_validation.csv、HTML 和 PDF。PDF 导出使用已安装的 Google Chrome。填写姓名、搭档、TA、section、提交日期，并根据实测结果完成讨论和结论后，再提交 GradeScope。TA 演示仍需现场运行两组不同目标。</p>
+<p>修改报告文字时请编辑 generate_report.py 中的模板，避免重新生成时覆盖修改。不要用正运动学计算位置代替尺量实测位置。</p>
+</html>
+
+
+
+
+first one
+set
+0.27 0.33 0.23 90
+test
+xliu173@eceb-3071-l07:~/ece470/ece470lab/lab_files$ ros2 run ece470labs lab4_exec 0.27 0.33 0.23 90
+IK/FK position residual: 1.360e-16 m
+Forward kinematics (world frame; matrix translation in mm):
+[[-2.17832692e-16 -1.00000000e+00  2.79051709e-16  2.70000000e+02]
+ [ 1.00000000e+00 -1.41871282e-16 -2.96141418e-18  3.30000000e+02]
+ [ 4.14998772e-16  1.24663573e-16  1.00000000e+00  2.30000000e+02]
+ [ 8.82761293e-19  1.19935824e-18 -3.54248702e-19  1.00000000e+00]]
+World gripper position (m): [0.27 0.33 0.23]
+Encoder angles (degrees): [179.38511109 -60.34319423  58.46989844 -88.12670421 -90.
+  -0.61488891]
+Check the arm's path is clear and move the monitor to the left.
+Check Remote mode, Normal state, and the ROS2 driver.
+Press <Enter> to command this pose, or Ctrl-C to cancel. 
+[INFO] [1792076450.352458718] [ur3e_lab4]: Waiting for robot feedback and controller...
+[INFO] [1792076452.049683795] [ur3e_lab4]: Moving to encoder degrees: [179.385 -60.343  58.47  -88.127 -90.     -0.615]
+[INFO] [1792076455.088463947] [ur3e_lab4]: Requested joint pose reached.
+measure
+x 26.5
+y 32.8
+z 22.7cm
+second one
+set 
+0.18 -0.1 0.06 -45
+test 
+xliu173@eceb-3071-l07:~/ece470/ece470lab/lab_files$ ros2 run ece470labs lab4_exec 0.18 -0.1 0.06 -45
+IK/FK position residual: 4.013e-16 m
+Forward kinematics (world frame; matrix translation in mm):
+[[ 7.07106781e-01  7.07106781e-01 -4.89072198e-17  1.80000000e+02]
+ [-7.07106781e-01  7.07106781e-01  3.84824390e-16 -1.00000000e+02]
+ [-1.07669492e-16 -1.13168969e-17  1.00000000e+00  6.00000000e+01]
+ [-3.05240953e-18  6.45889089e-19 -9.15729746e-19  1.00000000e+00]]
+World gripper position (m): [ 0.18 -0.1   0.06]
+Encoder angles (degrees): [ 122.74110329  -61.35864394  112.19283558 -140.83419165  -90.
+   77.74110329]
+Check the arm's path is clear and move the monitor to the left.
+Check Remote mode, Normal state, and the ROS2 driver.
+Press <Enter> to command this pose, or Ctrl-C to cancel. 
+[INFO] [1792076981.003650824] [ur3e_lab4]: Waiting for robot feedback and controller...
+[INFO] [1792076983.049669590] [ur3e_lab4]: Moving to encoder degrees: [ 122.741  -61.359  112.193 -140.834  -90.      77.741]
+[INFO] [1792076986.088555241] [ur3e_lab4]: Requested joint pose reached.
+measure 
+x 18.2
+y -10
+z 6.8
