@@ -30,6 +30,13 @@ home = np.radians([120, -90, 90, -90, -90, 0])
 # Position for UR3 not blocking the camera
 go_away = [270*pi/180.0, -90*pi/180.0, 90*pi/180.0, -90*pi/180.0, -90*pi/180.0, 135*pi/180.0]
 
+# Starting values in world meters. Confirm them at the bench.
+PICK_Z = 0.030
+BLOCK_HEIGHT = 0.030
+CLEARANCE_Z = 0.150
+GREEN_STACK = (0.18, 0.08)
+YELLOW_STACK = (0.34, 0.08)
+
 class UR3e(Node):
     def __init__(self):
         super().__init__('ur3e')
@@ -53,6 +60,7 @@ class UR3e(Node):
         self.image_sub = self.create_subscription(Image, '/image_raw', self.image_callback, qos_profile_sensor_data)
 
         self.image_count = 0
+        self.last_image_time = None
         # store world coordinates for blocks (same idea as xw_yw_G, xw_yw_Y in lab5)
         self.green_blocks = []   # list of (x, y) or (x, y, z)
         self.yellow_blocks = []  # adjust to your needs
@@ -100,6 +108,7 @@ class UR3e(Node):
         # Use your existing blob_search to detect block centers in world frame
         self.green_blocks = blob_search(cv_image, "green")
         self.yellow_blocks = blob_search(cv_image, "yellow")
+        self.last_image_time = time.monotonic()
 
 
 
@@ -184,11 +193,66 @@ class UR3e(Node):
 
 
     def move_block_vision(self, start_xy, target_xyz):
-        """TODO: Pick block at start_xy and place it at target_xy, both in world frame.
-        Hint: You can use your existing lab_invk, move_arm and set_io to pick and place a block.
-        """
+        """Pick up one block and place it at target_xyz in the world frame."""
         # ========================= Student's code starts here =========================
-        pass
+        x_end, y_end, z_end = target_xyz
+        yaw = 90
+`
+        # Find the joint angles at the block and at the drop-off point.
+        try:
+            x, y = start_xy[:2]
+            q_above_block = lab_invk(x, y, CLEARANCE_Z, yaw)
+            q_pick = lab_invk(x, y, PICK_Z, yaw)
+            q_above_stack = lab_invk(x_end, y_end, CLEARANCE_Z, yaw)
+            q_place = lab_invk(x_end, y_end, z_end, yaw)
+        except (TypeError, ValueError) as error:
+            print("Cannot move block at", start_xy, error)
+            return False
+
+        for to_move in (q_above_block, q_pick):
+            res = self.move_arm(to_move)
+            if not res:
+                raise RuntimeError(f"Could not reach the block at {start_xy}.")
+
+        # Turn on suction and wait for the cup to grab the block.
+        response = self.set_io(0, 1.0)
+        if response is None or not response.success:
+            raise RuntimeError("Could not turn suction on.")
+        self.analog_in_0_value = None
+        start_time = time.monotonic()
+        while rclpy.ok() and time.monotonic() - start_time < 0.5:
+            rclpy.spin_once(self, timeout_sec=0.05)
+        vacuum = self.analog_in_0_value
+        if vacuum is None or not np.isfinite(vacuum):
+            raise RuntimeError("No valid suction feedback on analog input 0.")
+
+        print(f"Suction reading at {start_xy}: {vacuum:.2f}")
+        found_block = vacuum >= 2  # Same threshold as Lab 2.
+        if not found_block:
+            print("Missing block at", start_xy)
+            q_up = q_above_block
+        else:
+            # Lift up, move across, then lower onto the stack.
+            for to_move in (q_above_block, q_above_stack):
+                res = self.move_arm(to_move)
+                if not res:
+                    raise RuntimeError("Could not carry the block above its stack.")
+            if self.analog_in_0_value < 2:
+                raise RuntimeError(f"Lost suction while carrying the block from {start_xy}.")
+            res = self.move_arm(q_place)
+            if not res:
+                raise RuntimeError("Could not lower the block onto its stack.")
+            q_up = q_above_stack
+
+        # Turn off suction before lifting the arm.
+        response = self.set_io(0, 0.0)
+        if response is None or not response.success:
+            raise RuntimeError("Could not turn suction off.")
+        time.sleep(0.2)
+        res = self.move_arm(q_up)
+        if not res:
+            raise RuntimeError("Could not lift the arm after releasing suction.")
+        return found_block
         # ========================= Student's code ends here =========================
 
 
@@ -210,7 +274,7 @@ def main(args=None):
             rclpy.spin_once(node, timeout_sec=0.1)
 
         # Move to go_away (your move_arm uses rclpy.spin_once internally)
-        node.move_arm(go_away)
+        parked = rclpy.ok() and node.move_arm(go_away)
 
         # Let vision settle for 5 seconds
         settle_start = time.time()
@@ -224,21 +288,46 @@ def main(args=None):
         # Execute task once based on snapshot
         # ========================= Student's code starts here =========================
 
-        """
-        TODO: Use the vision-detected block positions to move blocks around. 
-        Hints: use the found green_blocks, yellow_blocks to move the blocks correspondingly. You will
-        need to call move_block_vision(start_xy, target_xyz) where start_xy is the world coordinate of 
-        the block you want to move, and target_xyz is the world coordinate of where you want to place it 
-        (you can set z based on your needs).
-        """
+        if not rclpy.ok():
+            return
+        if not parked:
+            node.get_logger().error("Could not move the arm out of the camera view.")
+            return
+        if node.last_image_time is None or time.monotonic() - node.last_image_time > 1.0:
+            node.get_logger().error("No recent camera image while the arm was out of view.")
+            return
+
+        yellow_snapshot = list(node.yellow_blocks)
+        print("Snapshot yellow blocks:", yellow_snapshot)
+        node.destroy_subscription(node.image_sub)
+
+        total = len(green_snapshot) + len(yellow_snapshot)
+        if total > 4 or max(len(green_snapshot), len(yellow_snapshot)) > 3:
+            node.get_logger().error("Too many blocks detected. Check the camera masks.")
+            return
+        for _ in range(4 - total):
+            print("Missing block in the camera snapshot.")
+
+        # Stack the green blocks first, then the yellow blocks.
+        stacks = [(green_snapshot, GREEN_STACK), (yellow_snapshot, YELLOW_STACK)]
+        placed = 0
+        try:
+            for blocks, stack_xy in stacks:
+                x, y = stack_xy
+                z = PICK_Z
+                for start_xy in blocks:
+                    res = node.move_block_vision(start_xy, (x, y, z))
+                    if res:
+                        z = z + BLOCK_HEIGHT
+                        placed = placed + 1
+        except RuntimeError as error:
+            node.get_logger().error(str(error))
+            return
 
         # ========================= Student's code ends here ===========================
 
         node.move_arm(go_away)
-        node.get_logger().info("Task Completed. Press Ctrl+C to exit.")
-
-        while rclpy.ok():
-            rclpy.spin_once(node, timeout_sec=0.1)
+        node.get_logger().info(f"Finished. Placed {placed} of 4 blocks.")
 
     except KeyboardInterrupt:
         pass
